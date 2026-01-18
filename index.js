@@ -13,6 +13,9 @@ let broadcastCommand = null;
 // Store the latest saveinstance command
 let saveinstanceCommand = null;
 
+// Store saveinstance results with file info
+let saveinstanceResults = {};
+
 // Store saveinstance file data
 let saveinstanceFiles = {};
 
