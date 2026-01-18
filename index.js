@@ -13,8 +13,58 @@ let broadcastCommand = null;
 // Store the latest saveinstance command
 let saveinstanceCommand = null;
 
-// Store saveinstance results with file info
-let saveinstanceResults = {};
+// Store saveinstance file data
+let saveinstanceFiles = {};
+
+// POST: Roblox script uploads file
+app.post('/upload-saveinstance', (req, res) => {
+  const { commandId, discordUserId, filename, fileData, secretKey } = req.body;
+
+  if (secretKey !== SECRET_KEY) {
+    return res.json({ success: false, message: 'Invalid secret key' });
+  }
+
+  if (!commandId || !fileData || !filename) {
+    return res.json({ success: false, message: 'Missing required fields' });
+  }
+
+  // Store file data
+  saveinstanceFiles[commandId] = {
+    filename,
+    fileData,
+    discordUserId,
+    timestamp: Date.now()
+  };
+
+  console.log(`📁 File stored: ${filename} (${(fileData.length / 1024 / 1024).toFixed(2)}MB)`);
+
+  return res.json({ 
+    success: true, 
+    message: 'File uploaded'
+  });
+});
+
+// GET: Discord bot retrieves file
+app.get('/get-saveinstance-file/:commandId', (req, res) => {
+  const commandId = req.params.commandId;
+  const secretKey = req.query.key;
+
+  if (secretKey !== SECRET_KEY) {
+    return res.json({ success: false, message: 'Invalid key' });
+  }
+
+  const file = saveinstanceFiles[commandId];
+
+  if (file) {
+    delete saveinstanceFiles[commandId]; // Delete after retrieval
+    return res.json({ 
+      success: true, 
+      file 
+    });
+  }
+
+  return res.json({ success: false, message: 'File not found' });
+});
 
 // Health check
 app.get('/health', (req, res) => {
@@ -125,8 +175,8 @@ app.get('/get-saveinstance-command', (req, res) => {
 
   if (saveinstanceCommand) {
     const cmd = saveinstanceCommand;
-    saveinstanceCommand = null;
-    console.log(`📬 Sent saveinstance command to Roblox script`);
+    // Don't clear it yet - only clear after the script reports it received it
+    console.log(`📬 Sending saveinstance command to Roblox script`);
     return res.json({ 
       success: true, 
       hasCommand: true,
@@ -138,6 +188,23 @@ app.get('/get-saveinstance-command', (req, res) => {
     success: true, 
     hasCommand: false 
   });
+});
+
+// POST: Script acknowledges it received the command
+app.post('/ack-saveinstance', (req, res) => {
+  const { commandId, secretKey } = req.body;
+
+  if (secretKey !== SECRET_KEY) {
+    return res.json({ success: false, message: 'Invalid key' });
+  }
+
+  // Now clear the command since it was received
+  if (saveinstanceCommand && saveinstanceCommand.commandId === commandId) {
+    saveinstanceCommand = null;
+    console.log(`✅ Command ${commandId} acknowledged by script`);
+  }
+
+  return res.json({ success: true, message: 'Acknowledged' });
 });
 
 // POST: Auto-execute script reports saveinstance result
