@@ -7,69 +7,60 @@ app.use(express.json());
 const SECRET_KEY = 'my_secure_key_12345';
 const PORT = process.env.PORT || 3000;
 
-// Store pending commands for Roblox to pick up
-let pendingCommands = {};
+// Store the latest broadcast command
+let broadcastCommand = null;
 
 // Store results from Roblox
 let commandResults = {};
 
-// POST: Discord bot sends command here
-app.post('/execute-command', (req, res) => {
-  const { action, targetGameId, secretKey, commandId, discordUser, timestamp } = req.body;
+// POST: Discord bot broadcasts command to all scripts
+app.post('/broadcast-teleport', (req, res) => {
+  const { targetGameId, secretKey, commandId, discordUser } = req.body;
 
-  console.log('Received command:', { action, targetGameId, secretKey, commandId });
+  console.log('Received broadcast:', { targetGameId, secretKey, commandId });
 
-  // Validate secret key
   if (secretKey !== SECRET_KEY) {
     return res.json({ success: false, message: 'Invalid secret key' });
   }
 
-  // Validate target game ID (this is the correct field name from Discord bot)
   if (!targetGameId || !/^\d+$/.test(targetGameId)) {
-    console.log('Invalid targetGameId:', targetGameId);
-    return res.json({ success: false, message: 'Invalid game ID' });
+    return res.json({ success: false, message: 'Invalid target game ID' });
   }
 
-  // Store command for Roblox script to pick up
-  pendingCommands[targetGameId] = {
-    action,
+  // Store command for ANY script to pick up
+  broadcastCommand = {
+    action: 'teleport_and_save',
     targetGameId,
     commandId,
     discordUser,
-    timestamp,
-    executed: false
+    timestamp: Date.now()
   };
 
-  console.log(`📩 Command queued for game ${targetGameId}: ${action}`);
+  console.log(`📢 Broadcast command: Teleport to game ${targetGameId}`);
 
-  // Return immediately, Roblox will execute and update status
   return res.json({ 
     success: true, 
-    message: 'Command queued',
-    commandId,
-    playerCount: 0,
-    queued: true
+    message: 'Broadcast sent',
+    commandId
   });
 });
 
-// GET: Roblox script checks for pending commands
-app.get('/check-command/:gameId', (req, res) => {
-  const gameId = req.params.gameId;
+// GET: Roblox script gets the latest broadcast command
+app.get('/get-broadcast', (req, res) => {
   const secretKey = req.query.key;
 
   if (secretKey !== SECRET_KEY) {
     return res.json({ success: false, message: 'Invalid key' });
   }
 
-  const command = pendingCommands[gameId];
-
-  if (command && !command.executed) {
-    command.executed = true;
-    console.log(`✅ Command sent to Roblox game ${gameId}`);
+  if (broadcastCommand) {
+    const cmd = broadcastCommand;
+    broadcastCommand = null; // Clear after sending
+    console.log(`📬 Sent broadcast command to Roblox script`);
     return res.json({ 
       success: true, 
       hasCommand: true,
-      command 
+      command: cmd
     });
   }
 
@@ -79,26 +70,11 @@ app.get('/check-command/:gameId', (req, res) => {
   });
 });
 
-// GET: Get target game info (for teleporting)
-app.get('/get-target-game/:targetGameId', (req, res) => {
-  const targetGameId = req.params.targetGameId;
-  const secretKey = req.query.key;
-
-  if (secretKey !== SECRET_KEY) {
-    return res.json({ success: false, message: 'Invalid key' });
-  }
-
-  // Return target game ID (can be expanded with more game info)
-  return res.json({ 
-    success: true, 
-    targetGameId: targetGameId,
-    teleportUrl: `https://www.roblox.com/games/${targetGameId}`
-  });
-});
-
 // POST: Roblox script reports command result
 app.post('/report-result', (req, res) => {
-  const { gameId, commandId, action, success, playerCount, message, secretKey } = req.body;
+  const { gameId, commandId, action, success, playerName, message, secretKey } = req.body;
+
+  console.log('Received result:', { gameId, commandId, action, success });
 
   if (secretKey !== SECRET_KEY) {
     return res.json({ success: false, message: 'Invalid key' });
@@ -109,27 +85,22 @@ app.post('/report-result', (req, res) => {
     gameId,
     action,
     success,
-    playerCount,
+    playerName,
     message,
     timestamp: Date.now()
   };
 
-  // Clean up pending command
-  if (pendingCommands[gameId]) {
-    delete pendingCommands[gameId];
-  }
-
-  console.log(`📊 Result received from game ${gameId}: ${action} - ${message}`);
+  console.log(`✅ Result recorded: ${playerName} - ${message}`);
 
   return res.json({ 
     success: true, 
     message: 'Result recorded',
-    playerCount,
+    playerName,
     action
   });
 });
 
-// GET: Discord bot checks result (optional, for more advanced implementation)
+// GET: Discord bot checks result
 app.get('/check-result/:commandId', (req, res) => {
   const commandId = req.params.commandId;
   const result = commandResults[commandId];
@@ -144,13 +115,12 @@ app.get('/check-result/:commandId', (req, res) => {
 // Health check
 app.get('/health', (req, res) => {
   res.json({ 
-    status: 'ok', 
-    pendingCommands: Object.keys(pendingCommands).length,
+    status: 'ok',
+    hasBroadcast: broadcastCommand !== null,
     uptime: process.uptime()
   });
 });
 
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`📍 Server URL: http://localhost:${PORT}`);
 });
