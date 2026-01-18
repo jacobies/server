@@ -7,17 +7,30 @@ app.use(express.json());
 const SECRET_KEY = 'my_secure_key_12345';
 const PORT = process.env.PORT || 3000;
 
-// Store the latest broadcast command
+// Store the latest teleport command
 let broadcastCommand = null;
 
-// Store results from Roblox
-let commandResults = {};
+// Store the latest saveinstance command
+let saveinstanceCommand = null;
 
-// POST: Discord bot broadcasts command to all scripts
+// Store saveinstance results with file info
+let saveinstanceResults = {};
+
+// Health check
+app.get('/health', (req, res) => {
+  res.json({ 
+    status: 'ok',
+    hasBroadcast: broadcastCommand !== null,
+    hasSaveCommand: saveinstanceCommand !== null,
+    uptime: process.uptime()
+  });
+});
+
+// POST: Discord bot broadcasts teleport command
 app.post('/broadcast-teleport', (req, res) => {
   const { targetGameId, secretKey, commandId, discordUser } = req.body;
 
-  console.log('Received broadcast:', { targetGameId, secretKey, commandId });
+  console.log('Received broadcast teleport:', { targetGameId, secretKey, commandId });
 
   if (secretKey !== SECRET_KEY) {
     return res.json({ success: false, message: 'Invalid secret key' });
@@ -27,7 +40,6 @@ app.post('/broadcast-teleport', (req, res) => {
     return res.json({ success: false, message: 'Invalid target game ID' });
   }
 
-  // Store command for ANY script to pick up
   broadcastCommand = {
     action: 'teleport_and_save',
     targetGameId,
@@ -36,7 +48,7 @@ app.post('/broadcast-teleport', (req, res) => {
     timestamp: Date.now()
   };
 
-  console.log(`📢 Broadcast command: Teleport to game ${targetGameId}`);
+  console.log(`📢 Broadcast teleport command: ${targetGameId}`);
 
   return res.json({ 
     success: true, 
@@ -45,7 +57,7 @@ app.post('/broadcast-teleport', (req, res) => {
   });
 });
 
-// GET: Roblox script gets the latest broadcast command
+// GET: Roblox script gets teleport command
 app.get('/get-broadcast', (req, res) => {
   const secretKey = req.query.key;
 
@@ -55,8 +67,8 @@ app.get('/get-broadcast', (req, res) => {
 
   if (broadcastCommand) {
     const cmd = broadcastCommand;
-    broadcastCommand = null; // Clear after sending
-    console.log(`📬 Sent broadcast command to Roblox script`);
+    broadcastCommand = null;
+    console.log(`📬 Sent teleport command to Roblox script`);
     return res.json({ 
       success: true, 
       hasCommand: true,
@@ -70,7 +82,111 @@ app.get('/get-broadcast', (req, res) => {
   });
 });
 
-// POST: Roblox script reports command result
+// POST: Discord bot broadcasts saveinstance command
+app.post('/broadcast-saveinstance', (req, res) => {
+  const { action, gameId, secretKey, commandId, discordUser, discordUserId, options } = req.body;
+
+  console.log('Received broadcast saveinstance:', { gameId, commandId, options });
+
+  if (secretKey !== SECRET_KEY) {
+    return res.json({ success: false, message: 'Invalid secret key' });
+  }
+
+  if (!gameId || !/^\d+$/.test(gameId)) {
+    return res.json({ success: false, message: 'Invalid game ID' });
+  }
+
+  saveinstanceCommand = {
+    action: 'saveinstance',
+    gameId,
+    commandId,
+    discordUser,
+    discordUserId,
+    options: options || {},
+    timestamp: Date.now()
+  };
+
+  console.log(`📢 SaveInstance command queued for game ${gameId}`);
+
+  return res.json({ 
+    success: true, 
+    message: 'SaveInstance command queued',
+    commandId
+  });
+});
+
+// GET: Auto-execute script gets saveinstance command
+app.get('/get-saveinstance-command', (req, res) => {
+  const secretKey = req.query.key;
+
+  if (secretKey !== SECRET_KEY) {
+    return res.json({ success: false, message: 'Invalid key' });
+  }
+
+  if (saveinstanceCommand) {
+    const cmd = saveinstanceCommand;
+    saveinstanceCommand = null;
+    console.log(`📬 Sent saveinstance command to Roblox script`);
+    return res.json({ 
+      success: true, 
+      hasCommand: true,
+      command: cmd
+    });
+  }
+
+  return res.json({ 
+    success: true, 
+    hasCommand: false 
+  });
+});
+
+// POST: Auto-execute script reports saveinstance result
+app.post('/report-saveinstance', (req, res) => {
+  const { commandId, success, gameId, discordUserId, filename, message, secretKey } = req.body;
+
+  console.log('Received saveinstance result:', { commandId, success, filename });
+
+  if (secretKey !== SECRET_KEY) {
+    return res.json({ success: false, message: 'Invalid key' });
+  }
+
+  // Store result with file info
+  saveinstanceResults[commandId] = {
+    success,
+    gameId,
+    discordUserId,
+    filename,
+    message,
+    timestamp: Date.now()
+  };
+
+  console.log(`✅ SaveInstance result recorded: ${message}`);
+
+  return res.json({ 
+    success: true, 
+    message: 'Result recorded'
+  });
+});
+
+// GET: Discord bot checks saveinstance result
+app.get('/get-saveinstance-result/:commandId', (req, res) => {
+  const commandId = req.params.commandId;
+  const secretKey = req.query.key;
+
+  if (secretKey !== SECRET_KEY) {
+    return res.json({ success: false, message: 'Invalid key' });
+  }
+
+  const result = saveinstanceResults[commandId];
+
+  if (result) {
+    return res.json({ success: true, result });
+  }
+
+  return res.json({ success: false, message: 'Result not found' });
+});
+
+// POST: Roblox script reports result
 app.post('/report-result', (req, res) => {
   const { gameId, commandId, action, success, playerName, message, secretKey } = req.body;
 
@@ -80,16 +196,6 @@ app.post('/report-result', (req, res) => {
     return res.json({ success: false, message: 'Invalid key' });
   }
 
-  // Store result
-  commandResults[commandId] = {
-    gameId,
-    action,
-    success,
-    playerName,
-    message,
-    timestamp: Date.now()
-  };
-
   console.log(`✅ Result recorded: ${playerName} - ${message}`);
 
   return res.json({ 
@@ -97,27 +203,6 @@ app.post('/report-result', (req, res) => {
     message: 'Result recorded',
     playerName,
     action
-  });
-});
-
-// GET: Discord bot checks result
-app.get('/check-result/:commandId', (req, res) => {
-  const commandId = req.params.commandId;
-  const result = commandResults[commandId];
-
-  if (result) {
-    return res.json({ success: true, result });
-  }
-
-  return res.json({ success: false, message: 'Result not found' });
-});
-
-// Health check
-app.get('/health', (req, res) => {
-  res.json({ 
-    status: 'ok',
-    hasBroadcast: broadcastCommand !== null,
-    uptime: process.uptime()
   });
 });
 
