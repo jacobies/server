@@ -6,6 +6,7 @@ const PORT = process.env.PORT || 3000;
 
 let currentCommand = null;
 let commandRetrieved = false; // Track if execute command has been retrieved
+let latestFile = null; // Store the latest saved file
 
 app.use(cors());
 app.use(express.json());
@@ -58,10 +59,10 @@ app.post('/send-command', (req, res) => {
 });
 
 app.post('/set-execute-mode', (req, res) => {
-    const { options } = req.body;
-    currentCommand = { command: 'saveinstance_execute', options: options || {} };
+    const { options, placeId } = req.body;
+    currentCommand = { command: 'saveinstance_execute', options: options || {}, placeId: placeId };
     commandRetrieved = false; // Reset retrieval flag for new execute command
-    console.log('[Middleware] Set to execute mode with options:', options);
+    console.log('[Middleware] Set to execute mode with options:', options, 'and placeId:', placeId);
     res.json({ success: true });
 });
 
@@ -76,6 +77,27 @@ app.post('/clear-command', (req, res) => {
 app.post('/acknowledge', (req, res) => {
     console.log('[Middleware] Command acknowledged:', req.body);
     res.json({ success: true });
+});
+
+app.post('/upload-file', (req, res) => {
+    const { fileName, fileData } = req.body;
+    
+    if (!fileName || !fileData) {
+        return res.status(400).json({ error: 'Missing fileName or fileData' });
+    }
+    
+    latestFile = { fileName, fileData, timestamp: Date.now() };
+    console.log('[Middleware] File uploaded:', fileName);
+    res.json({ success: true, message: 'File stored' });
+});
+
+app.get('/get-latest-file', (req, res) => {
+    if (latestFile) {
+        console.log('[Middleware] Sending latest file:', latestFile.fileName);
+        res.json({ success: true, ...latestFile });
+    } else {
+        res.json({ success: false, message: 'No file available' });
+    }
 });
 
 app.get('/health', (req, res) => {
