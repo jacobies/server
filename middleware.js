@@ -5,6 +5,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 let currentCommand = null;
+let commandRetrieved = false; // Track if execute command has been retrieved
 
 app.use(cors());
 app.use(express.json());
@@ -21,7 +22,21 @@ app.get('/get-command', (req, res) => {
     if (currentCommand) {
         console.log('[Middleware] Sending command to Roblox client:', currentCommand);
         const cmd = currentCommand;
-        // Only send once, don't clear yet - let client clear it
+        
+        // If it's an execute command and it's been retrieved before, clear it
+        if (cmd.command === 'saveinstance_execute' && commandRetrieved) {
+            console.log('[Middleware] Execute command already retrieved once, clearing it');
+            currentCommand = null;
+            commandRetrieved = false;
+            res.json({});
+            return;
+        }
+        
+        // Mark execute commands as retrieved
+        if (cmd.command === 'saveinstance_execute') {
+            commandRetrieved = true;
+        }
+        
         res.json(cmd);
     } else {
         res.json({});
@@ -36,6 +51,7 @@ app.post('/send-command', (req, res) => {
     }
     
     currentCommand = { command, placeId, options: options || {} };
+    commandRetrieved = false; // Reset retrieval flag
     console.log('[Middleware] Received command from Discord:', currentCommand);
     
     res.json({ success: true, message: 'Command queued' });
@@ -44,13 +60,15 @@ app.post('/send-command', (req, res) => {
 app.post('/set-execute-mode', (req, res) => {
     const { options } = req.body;
     currentCommand = { command: 'saveinstance_execute', options: options || {} };
+    commandRetrieved = false; // Reset retrieval flag for new execute command
     console.log('[Middleware] Set to execute mode with options:', options);
     res.json({ success: true });
 });
 
 app.post('/clear-command', (req, res) => {
     console.log('[Middleware] Clearing command. Previous command was:', currentCommand);
-    currentCommand = null; // Actually clear it to null
+    currentCommand = null;
+    commandRetrieved = false;
     console.log('[Middleware] Command cleared. Current command is now:', currentCommand);
     res.json({ success: true, cleared: true });
 });
