@@ -1,59 +1,14 @@
 const express = require('express');
 const cors = require('cors');
-const fs = require('fs');
-const path = require('path');
 const app = express();
 
 const PORT = process.env.PORT || 3000;
-const CONFIG_FILE_PATH = '/Users/jacobmorgan/Documents/Macsploit Workspace/saveinstance_config.json';
 
 let currentCommand = null;
 let latestFile = null; // Store the latest saved file
 
 app.use(cors());
 app.use(express.json());
-
-// Function to update config file with new options
-function updateConfigFile(options) {
-    try {
-        // Read existing config or create default
-        let config = {
-            saveinstance_options: {
-                ShowStatus: true,
-                AntiIdle: true,
-                IgnoreDefaultProperties: true,
-                IgnoreNotArchivable: true,
-                RemovePlayerCharacters: true,
-                SaveNotCreatable: false,
-                IgnoreSpecialProperties: false,
-                AlternativeWritefile: true,
-                IgnoreDefaultPlayerScripts: true,
-                IgnoreSharedStrings: true
-            },
-            workspace_path: "/Users/jacobmorgan/Documents/Macsploit Workspace"
-        };
-
-        // Check if file exists and read it
-        if (fs.existsSync(CONFIG_FILE_PATH)) {
-            const fileContent = fs.readFileSync(CONFIG_FILE_PATH, 'utf8');
-            config = JSON.parse(fileContent);
-        }
-
-        // Update with new options from Discord
-        config.saveinstance_options = {
-            ...config.saveinstance_options,
-            ...options
-        };
-
-        // Write updated config back to file
-        fs.writeFileSync(CONFIG_FILE_PATH, JSON.stringify(config, null, 2));
-        console.log('[Middleware] Config file updated with options:', options);
-        return true;
-    } catch (error) {
-        console.error('[Middleware] Error updating config file:', error);
-        return false;
-    }
-}
 
 app.get('/', (req, res) => {
     res.json({ 
@@ -88,24 +43,15 @@ app.post('/send-command', (req, res) => {
         return res.status(400).json({ error: 'Missing command or placeId' });
     }
     
-    // Update config file with options from Discord
-    if (options) {
-        const configUpdated = updateConfigFile(options);
-        if (!configUpdated) {
-            console.warn('[Middleware] Failed to update config file, but continuing...');
-        }
-    }
-    
-    currentCommand = { command, placeId };
+    currentCommand = { command, placeId, options: options || {} };
     console.log('[Middleware] NEW COMMAND SET:', currentCommand);
-    console.log('[Middleware] Options written to config file');
     
     res.json({ success: true, message: 'Command queued' });
 });
 
 app.post('/set-execute-mode', (req, res) => {
-    const { placeId } = req.body;
-    currentCommand = { command: 'saveinstance_execute', placeId: placeId };
+    const { placeId, options } = req.body;
+    currentCommand = { command: 'saveinstance_execute', placeId: placeId, options: options || {} };
     console.log('[Middleware] SET EXECUTE MODE:', currentCommand);
     res.json({ success: true });
 });
