@@ -84,20 +84,20 @@ app.post('/acknowledge', (req, res) => {
 });
 
 app.post('/upload-file', (req, res) => {
-    const { fileName, fileData } = req.body;
+    const { fileName, fileData, placeId } = req.body;
     
     if (!fileName || !fileData) {
         return res.status(400).json({ error: 'Missing fileName or fileData' });
     }
     
-    latestFile = { fileName, fileData, timestamp: Date.now() };
-    console.log('[Middleware] File uploaded:', fileName, 'Size:', Math.round(fileData.length / 1024), 'KB (base64)');
+    latestFile = { fileName, fileData, placeId: placeId || null, timestamp: Date.now() };
+    console.log('[Middleware] File uploaded:', fileName, 'PlaceId:', placeId, 'Size:', Math.round(fileData.length / 1024), 'KB (base64)');
     res.json({ success: true, message: 'File stored' });
 });
 
 app.get('/get-latest-file', (req, res) => {
     if (latestFile) {
-        console.log('[Middleware] Sending latest file:', latestFile.fileName);
+        console.log('[Middleware] Sending latest file:', latestFile.fileName, 'PlaceId:', latestFile.placeId);
         res.json({ success: true, ...latestFile });
     } else {
         res.json({ success: false, message: 'No file available' });
