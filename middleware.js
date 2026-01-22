@@ -21,6 +21,7 @@ app.get('/get-command', (req, res) => {
     if (currentCommand) {
         console.log('[Middleware] Sending command to Roblox client:', currentCommand);
         const cmd = currentCommand;
+        // Only send once, don't clear yet - let client clear it
         res.json(cmd);
     } else {
         res.json({});
@@ -48,9 +49,10 @@ app.post('/set-execute-mode', (req, res) => {
 });
 
 app.post('/clear-command', (req, res) => {
-    console.log('[Middleware] Command cleared:', req.body);
-    currentCommand = null;
-    res.json({ success: true });
+    console.log('[Middleware] Clearing command. Previous command was:', currentCommand);
+    currentCommand = null; // Actually clear it to null
+    console.log('[Middleware] Command cleared. Current command is now:', currentCommand);
+    res.json({ success: true, cleared: true });
 });
 
 app.post('/acknowledge', (req, res) => {
