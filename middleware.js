@@ -25,21 +25,22 @@ app.get('/get-command', (req, res) => {
         const cmd = currentCommand;
         
         // If it's an execute command and it's been retrieved before, clear it
-        if (cmd.command === 'saveinstance_execute' && commandRetrieved) {
-            console.log('[Middleware] Execute command already retrieved once, clearing it');
-            currentCommand = null;
-            commandRetrieved = false;
-            res.json({});
-            return;
-        }
-        
-        // Mark execute commands as retrieved
         if (cmd.command === 'saveinstance_execute') {
+            if (commandRetrieved) {
+                console.log('[Middleware] Execute command already retrieved once, clearing it now');
+                currentCommand = null;
+                commandRetrieved = false;
+                res.json({});
+                return;
+            }
+            // Mark execute commands as retrieved
             commandRetrieved = true;
+            console.log('[Middleware] First retrieval of execute command, marking as retrieved');
         }
         
         res.json(cmd);
     } else {
+        console.log('[Middleware] No command available, sending empty response');
         res.json({});
     }
 });
