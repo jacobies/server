@@ -1,15 +1,59 @@
 const express = require('express');
 const cors = require('cors');
+const fs = require('fs');
+const path = require('path');
 const app = express();
 
 const PORT = process.env.PORT || 3000;
+const CONFIG_FILE_PATH = '/Users/jacobmorgan/Documents/Macsploit Workspace/saveinstance_config.json';
 
 let currentCommand = null;
-let commandRetrieved = false; // Track if execute command has been retrieved
 let latestFile = null; // Store the latest saved file
 
 app.use(cors());
 app.use(express.json());
+
+// Function to update config file with new options
+function updateConfigFile(options) {
+    try {
+        // Read existing config or create default
+        let config = {
+            saveinstance_options: {
+                ShowStatus: true,
+                AntiIdle: true,
+                IgnoreDefaultProperties: true,
+                IgnoreNotArchivable: true,
+                RemovePlayerCharacters: true,
+                SaveNotCreatable: false,
+                IgnoreSpecialProperties: false,
+                AlternativeWritefile: true,
+                IgnoreDefaultPlayerScripts: true,
+                IgnoreSharedStrings: true
+            },
+            workspace_path: "/Users/jacobmorgan/Documents/Macsploit Workspace"
+        };
+
+        // Check if file exists and read it
+        if (fs.existsSync(CONFIG_FILE_PATH)) {
+            const fileContent = fs.readFileSync(CONFIG_FILE_PATH, 'utf8');
+            config = JSON.parse(fileContent);
+        }
+
+        // Update with new options from Discord
+        config.saveinstance_options = {
+            ...config.saveinstance_options,
+            ...options
+        };
+
+        // Write updated config back to file
+        fs.writeFileSync(CONFIG_FILE_PATH, JSON.stringify(config, null, 2));
+        console.log('[Middleware] Config file updated with options:', options);
+        return true;
+    } catch (error) {
+        console.error('[Middleware] Error updating config file:', error);
+        return false;
+    }
+}
 
 app.get('/', (req, res) => {
     res.json({ 
@@ -20,27 +64,19 @@ app.get('/', (req, res) => {
 });
 
 app.get('/get-command', (req, res) => {
+    console.log('[Middleware] GET /get-command - Current command:', currentCommand);
+    
     if (currentCommand) {
-        console.log('[Middleware] Sending command to Roblox client:', currentCommand);
-        const cmd = currentCommand;
+        const cmd = { ...currentCommand }; // Copy the command
+        console.log('[Middleware] Sending command:', cmd);
         
-        // If it's an execute command and it's been retrieved before, clear it
-        if (cmd.command === 'saveinstance_execute') {
-            if (commandRetrieved) {
-                console.log('[Middleware] Execute command already retrieved once, clearing it now');
-                currentCommand = null;
-                commandRetrieved = false;
-                res.json({});
-                return;
-            }
-            // Mark execute commands as retrieved
-            commandRetrieved = true;
-            console.log('[Middleware] First retrieval of execute command, marking as retrieved');
-        }
+        // IMMEDIATELY clear it after sending
+        console.log('[Middleware] Clearing command after sending');
+        currentCommand = null;
         
         res.json(cmd);
     } else {
-        console.log('[Middleware] No command available, sending empty response');
+        console.log('[Middleware] No command available');
         res.json({});
     }
 });
@@ -52,27 +88,40 @@ app.post('/send-command', (req, res) => {
         return res.status(400).json({ error: 'Missing command or placeId' });
     }
     
-    currentCommand = { command, placeId, options: options || {} };
-    commandRetrieved = false; // Reset retrieval flag
-    console.log('[Middleware] Received command from Discord:', currentCommand);
+    // Update config file with options from Discord
+    if (options) {
+        const configUpdated = updateConfigFile(options);
+        if (!configUpdated) {
+            console.warn('[Middleware] Failed to update config file, but continuing...');
+        }
+    }
+    
+    currentCommand = { command, placeId };
+    console.log('[Middleware] NEW COMMAND SET:', currentCommand);
+    console.log('[Middleware] Options written to config file');
     
     res.json({ success: true, message: 'Command queued' });
 });
 
 app.post('/set-execute-mode', (req, res) => {
-    const { options, placeId } = req.body;
-    currentCommand = { command: 'saveinstance_execute', options: options || {}, placeId: placeId };
-    commandRetrieved = false; // Reset retrieval flag for new execute command
-    console.log('[Middleware] Set to execute mode with options:', options, 'and placeId:', placeId);
+    const { placeId } = req.body;
+    currentCommand = { command: 'saveinstance_execute', placeId: placeId };
+    console.log('[Middleware] SET EXECUTE MODE:', currentCommand);
     res.json({ success: true });
 });
 
 app.post('/clear-command', (req, res) => {
-    console.log('[Middleware] Clearing command. Previous command was:', currentCommand);
+    console.log('[Middleware] MANUAL CLEAR - Previous command:', currentCommand);
     currentCommand = null;
-    commandRetrieved = false;
-    console.log('[Middleware] Command cleared. Current command is now:', currentCommand);
+    console.log('[Middleware] Command cleared');
     res.json({ success: true, cleared: true });
+});
+
+app.get('/clear-command', (req, res) => {
+    console.log('[Middleware] GET CLEAR - Previous command:', currentCommand);
+    currentCommand = null;
+    console.log('[Middleware] Command cleared via GET');
+    res.json({ success: true, cleared: true, message: 'Command cleared!' });
 });
 
 app.post('/acknowledge', (req, res) => {
