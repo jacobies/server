@@ -8,7 +8,8 @@ let currentCommand = null;
 let latestFile = null; // Store the latest saved file
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '500mb' })); // Increased limit for large files
+app.use(express.urlencoded({ limit: '500mb', extended: true }));
 
 app.get('/', (req, res) => {
     res.json({ 
@@ -25,9 +26,11 @@ app.get('/get-command', (req, res) => {
         const cmd = { ...currentCommand }; // Copy the command
         console.log('[Middleware] Sending command:', cmd);
         
-        // IMMEDIATELY clear it after sending
-        console.log('[Middleware] Clearing command after sending');
-        currentCommand = null;
+        // DON'T clear execute commands immediately - they need to persist after teleport
+        if (cmd.command !== 'saveinstance_execute') {
+            console.log('[Middleware] Clearing non-execute command after sending');
+            currentCommand = null;
+        }
         
         res.json(cmd);
     } else {
@@ -72,6 +75,11 @@ app.get('/clear-command', (req, res) => {
 
 app.post('/acknowledge', (req, res) => {
     console.log('[Middleware] Command acknowledged:', req.body);
+    // Clear execute command after acknowledgment
+    if (currentCommand && currentCommand.command === 'saveinstance_execute') {
+        console.log('[Middleware] Clearing execute command after acknowledgment');
+        currentCommand = null;
+    }
     res.json({ success: true });
 });
 
@@ -83,7 +91,7 @@ app.post('/upload-file', (req, res) => {
     }
     
     latestFile = { fileName, fileData, timestamp: Date.now() };
-    console.log('[Middleware] File uploaded:', fileName);
+    console.log('[Middleware] File uploaded:', fileName, 'Size:', Math.round(fileData.length / 1024), 'KB (base64)');
     res.json({ success: true, message: 'File stored' });
 });
 
