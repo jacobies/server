@@ -123,9 +123,25 @@ app.post('/upload-chunk', (req, res) => {
         
         const upload = chunkStorage.get(uploadKey);
         
-        // Store this chunk
-        upload.chunks[chunkIndex - 1] = fileData;
+        // Decode chunk if it's a raw chunk (each chunk is separately base64 encoded)
+        const isRawChunk = req.body.isRawChunk || false;
+        
+        if (isRawChunk) {
+            // Decode the base64 chunk back to binary Buffer
+            try {
+                upload.chunks[chunkIndex - 1] = Buffer.from(fileData, 'base64');
+                console.log(`[Middleware] Decoded chunk ${chunkIndex} to ${upload.chunks[chunkIndex - 1].length} bytes`);
+            } catch (err) {
+                console.error(`[Middleware] Failed to decode chunk ${chunkIndex}:`, err);
+                return res.status(400).json({ error: 'Invalid base64 chunk' });
+            }
+        } else {
+            // Old method - store as base64 string (backwards compatibility)
+            upload.chunks[chunkIndex - 1] = fileData;
+        }
+        
         upload.receivedCount++;
+        upload.isRawChunk = isRawChunk; // Store flag for later
         
         console.log(`[Middleware] ✅ Chunk ${chunkIndex}/${totalChunks} stored (${upload.receivedCount}/${totalChunks} received)`);
         
@@ -133,8 +149,20 @@ app.post('/upload-chunk', (req, res) => {
         if (upload.receivedCount === totalChunks) {
             console.log(`[Middleware] 🔄 All chunks received! Combining file...`);
             
-            // Combine all chunks
-            const completeBase64 = upload.chunks.join('');
+            let completeBase64;
+            
+            if (upload.isRawChunk) {
+                // Combine binary buffers, then re-encode to base64
+                console.log(`[Middleware] Combining ${upload.chunks.length} binary chunks...`);
+                const combinedBuffer = Buffer.concat(upload.chunks);
+                console.log(`[Middleware] Combined buffer size: ${combinedBuffer.length} bytes`);
+                completeBase64 = combinedBuffer.toString('base64');
+                console.log(`[Middleware] Re-encoded to base64: ${completeBase64.length} chars`);
+            } else {
+                // Old method - combine base64 strings (backwards compatibility)
+                console.log(`[Middleware] Combining base64 strings (old method)...`);
+                completeBase64 = upload.chunks.join('');
+            }
             
             // Store as latest file
             const previousPlaceId = latestFile ? latestFile.placeId : 'none';
