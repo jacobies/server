@@ -15,7 +15,9 @@ app.get('/', (req, res) => {
     res.json({ 
         status: 'running', 
         service: 'Roblox SaveInstance Middleware',
-        hasCommand: !!currentCommand 
+        hasCommand: !!currentCommand,
+        hasFile: !!latestFile,
+        filePlaceId: latestFile ? latestFile.placeId : null
     });
 });
 
@@ -73,6 +75,15 @@ app.get('/clear-command', (req, res) => {
     res.json({ success: true, cleared: true, message: 'Command cleared!' });
 });
 
+// NEW: Clear file storage endpoint
+app.post('/clear-file', (req, res) => {
+    const previousFile = latestFile ? `${latestFile.fileName} (PlaceID: ${latestFile.placeId})` : 'none';
+    console.log('[Middleware] CLEAR FILE - Previous file:', previousFile);
+    latestFile = null;
+    console.log('[Middleware] File storage cleared');
+    res.json({ success: true, cleared: true, previousFile });
+});
+
 app.post('/acknowledge', (req, res) => {
     console.log('[Middleware] Command acknowledged:', req.body);
     // Clear execute command after acknowledgment
@@ -90,8 +101,14 @@ app.post('/upload-file', (req, res) => {
         return res.status(400).json({ error: 'Missing fileName or fileData' });
     }
     
+    const previousPlaceId = latestFile ? latestFile.placeId : 'none';
+    
     latestFile = { fileName, fileData, placeId: placeId || null, timestamp: Date.now() };
-    console.log('[Middleware] File uploaded:', fileName, 'PlaceId:', placeId, 'Size:', Math.round(fileData.length / 1024), 'KB (base64)');
+    
+    console.log('[Middleware] File uploaded:', fileName);
+    console.log('[Middleware] PlaceId:', placeId, '(previous:', previousPlaceId + ')');
+    console.log('[Middleware] Size:', Math.round(fileData.length / 1024), 'KB (base64)');
+    
     res.json({ success: true, message: 'File stored' });
 });
 
@@ -100,12 +117,18 @@ app.get('/get-latest-file', (req, res) => {
         console.log('[Middleware] Sending latest file:', latestFile.fileName, 'PlaceId:', latestFile.placeId);
         res.json({ success: true, ...latestFile });
     } else {
+        console.log('[Middleware] No file available');
         res.json({ success: false, message: 'No file available' });
     }
 });
 
 app.get('/health', (req, res) => {
-    res.json({ status: 'running', hasCommand: !!currentCommand });
+    res.json({ 
+        status: 'running', 
+        hasCommand: !!currentCommand,
+        hasFile: !!latestFile,
+        filePlaceId: latestFile ? latestFile.placeId : null
+    });
 });
 
 app.listen(PORT, '0.0.0.0', () => {
